@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Can you find this card?</title>
+  <style>
+    :root{
+      --card-w: 200px;
+      --card-h: 260px;
+      --gap: 110px;
+      --max-tilt: 55deg;
+      --bg: #b3e5fc;
+      --muted: #94a3b8;
+    }
+
+    *{ box-sizing: border-box; }
+    html, body { height: 100%; }
+    body{
+      margin:0; padding:0; display:flex; flex-direction:column; justify-content:flex-start; align-items:center;
+      color:#0f172a; font-family:ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto;
+      background: radial-gradient(1100px 560px at 50% -120px, #e0f7fa 0%, var(--bg) 50%, #81d4fa 100%);
+      min-height:100vh;
+    }
+
+    .app{ width:min(96vw,1100px); display:flex; flex-direction:column; align-items:center; gap:18px; margin-top:45px; }
+    h1{ margin-top:16px; font-weight:800; font-size:clamp(28px,4vw,48px); color:#01579b; text-shadow:0 2px 10px rgba(255,255,255,.35); }
+
+    .stage{ width:100%; height: clamp(500px, 60vh, 600px); display:grid; place-items:center; overflow:hidden; margin-top:-5px; }
+
+    .carousel{ position:relative; width:100%; height:calc(var(--card-h) + 90px); perspective:1400px; transform-style:preserve-3d; touch-action:none; cursor: grab; }
+    .carousel.grabbing{ cursor:grabbing; }
+
+    .card{ position:absolute; left:50%; top:50%; width:var(--card-w); height:var(--card-h);
+      border-radius:18px; overflow:visible; transform-origin:center; user-select:none;
+      background:#e1f5fe; box-shadow:0 16px 40px rgba(0,0,0,.25), inset 0 0 0 1px rgba(255,255,255,.4);
+      transition: transform 420ms cubic-bezier(.2,.7,.1,1), filter 420ms ease, opacity 420ms ease, box-shadow 420ms ease;
+      display:flex; flex-direction:column; align-items:center;
+    }
+
+    .thumb{ position:relative; width:100%; height:var(--card-h); }
+    .thumb img{ width:100%; height:100%; object-fit:cover; display:block; border-radius:18px; transition: transform 0.4s ease; }
+    .thumb::after{ content:""; position:absolute; inset:0; background: linear-gradient(to top, rgba(255,255,255,.3), rgba(255,255,255,0)); pointer-events:none; }
+
+    .label{ margin-top:8px; text-align:center; font-size:16px; font-weight:700; color:#01579b; background: rgba(255,255,255,.9); border-radius:8px; padding:4px 10px; box-shadow:0 2px 6px rgba(0,0,0,.1); }
+
+    .card.dim{ filter:brightness(.92) saturate(.9); opacity:.86; box-shadow:0 10px 24px rgba(0,0,0,.25), inset 0 0 0 1px rgba(255,255,255,.4); }
+    .card.center{ filter:brightness(1.1) saturate(1.1); box-shadow:0 26px 70px rgba(3,169,244,.35), inset 0 0 0 1px rgba(255,255,255,.6); transform: scale(1.1) translateY(-10px); z-index: 999; }
+
+    .controls{ position:fixed; bottom:24px; left:50%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; gap:8px; }
+    button.spin{ all:unset; cursor:pointer; padding:14px 28px; border-radius:999px; background: linear-gradient(180deg, #ffb74d, #fb8c00); color:#fff; font-weight:800; letter-spacing:.5px; box-shadow:0 12px 30px rgba(251,140,0,.35), inset 0 0 0 1px rgba(255,255,255,.2); transition: transform 160ms ease, filter 160ms ease; }
+    button.spin:hover{ transform: translateY(-1px); filter: brightness(1.05); }
+    button.spin[disabled]{ opacity:.6; cursor:not-allowed; filter: grayscale(.2) brightness(.85); }
+    .hint{ color:#0288d1; font-size:13px; }
+
+    .logo { position: fixed; top: 20px; right: 20px; width: 100px; height: auto; opacity: 0.9; transition: transform 0.3s ease; }
+    .logo:hover { transform: scale(1.05); opacity: 1; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <h1>Can you find this card?</h1>
+    <div class="stage">
+      <div class="carousel" id="carousel"></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="spinBtn" class="spin">SPIN</button>
+    <span id="status" class="hint">Click SPIN to start</span>
+  </div>
+
+  <img src="https://kids-up.jp/misc/battle-card-rules/cards/2battlelogo.png" alt="Logo" class="logo" />
+
+  <audio id="spinSound" src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_5bb46b8f54.mp3?filename=spinning-wheel-11275.mp3"></audio>
+  <audio id="stopSound" src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_5e7b29b06f.mp3?filename=click-124467.mp3"></audio>
+
+  <script>
+    const spinSound = document.getElementById('spinSound');
+    const stopSound = document.getElementById('stopSound');
+
+    const cardsData = [
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Unicorn.png', name:'Unicorn'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Pupper.png', name:'Pupper'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Stormy.png', name:'Stormy'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Students.png', name:'Students'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Tale.png', name:'Tale'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Teachers.png', name:'Teachers'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Dance%20Panda.png', name:'Dance Panda'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Dr.%20Doubt.png', name:'Dr. Doubt'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Dragon.png', name:'Dragon'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Echo%20&%20Tale.png', name:'Echo & Tale'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Echo.png', name:'Echo'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Hamstronaut.png', name:'Hamstronaut'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Jot%20&%20Boom.png', name:'Jot & Boom'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Jot.png', name:'Jot'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Kitty.png', name:'Kitty'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Machopig.png', name:'Machopig'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Megabot.png', name:'Megabot'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Mermaids.png', name:'Mermaids'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Popchicks.png', name:'Popchicks'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Candy%20Fairy.png', name:'Candy Fairy'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Capyninjas.png', name:'Capyninjas'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Boom.png', name:'Boom'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Airshark.png', name:'Airshark'},
+      {src:'https://kids-up.jp/misc/battle-card-rules/cards/Axobubble.png', name:'Axobubble'}
+    ];
+
+    const carousel = document.getElementById('carousel');
+    const spinBtn = document.getElementById('spinBtn');
+    const statusEl = document.getElementById('status');
+
+    const cards = cardsData.map(data => {
+      const card = document.createElement('div');
+      card.className = 'card dim';
+      const th = document.createElement('div');
+      th.className = 'thumb';
+      const img = document.createElement('img');
+      img.src = data.src;
+      img.alt = data.name;
+      th.appendChild(img);
+      const label = document.createElement('div');
+      label.className = 'label';
+      label.textContent = data.name;
+      card.append(th, label);
+      carousel.appendChild(card);
+      return card;
+    });
+
+    const N = cards.length;
+    const GAP = 110;
+    const MAX_TILT = 55;
+    let current = 0; // fractional while dragging
+    let spinning = false;
+
+    function mod(n, m){ return ((n % m) + m) % m; }
+    function signedDelta(i, c){ let d = i - c; if(d > N/2) d -= N; if(d < -N/2) d += N; return d; }
+    function normIndex(v){ return ((Math.round(v) % N) + N) % N; }
+    function layout(){
+      cards.forEach((el, i)=>{
+        const d = signedDelta(i, current);
+        const abs = Math.abs(d);
+        const x = d * GAP;
+        const rot = -Math.sign(d || 1) * Math.min(abs*9, MAX_TILT);
+        const isCenter = abs < 0.5;
+        const z = 280 - abs*90;
+        const s = isCenter ? 1.1 : 0.9 - Math.min(abs,4)*0.06;
+        el.style.zIndex = 100 - Math.round(abs);
+        el.style.transform = `translate3d(calc(-50% + ${x}px), -55%, ${z}px) rotateY(${rot}deg) scale(${s})`;
+        el.classList.toggle('center', isCenter);
+        el.classList.toggle('dim', !isCenter);
+      });
+    }
+    layout();
+
+    function cryptoRandomInt(max){
+      if (window.crypto && crypto.getRandomValues) {
+        const arr = new Uint32Array(1);
+        window.crypto.getRandomValues(arr);
+        return arr[0] % max;
+      }
+      return Math.floor(Math.random() * max);
+    }
+
+    async function spin(){
+      if(spinning) return;
+      spinning = true;
+      spinBtn.disabled = true;
+      statusEl.textContent = 'Spinning…';
+
+      spinSound.currentTime = 0; spinSound.play();
+
+      const extra = (() => { const r = cryptoRandomInt(N); return r === 0 ? 1 : r; })();
+      const steps = (N * 2) + extra;
+      const duration = 3000;
+      const interval = duration / steps;
+
+      for(let step=0; step<steps; step++){
+        current = mod(current + 1, N);
+        layout();
+        await new Promise(r=>setTimeout(r, interval));
+      }
+
+      spinSound.pause(); spinSound.currentTime = 0; stopSound.currentTime = 0; stopSound.play();
+
+      const idx = normIndex(mod(current, N));
+      const chosen = cards[idx];
+      if (chosen) {
+        const selected = chosen.querySelector('.label').textContent;
+        statusEl.textContent = 'Selected: ' + selected;
+      } else {
+        statusEl.textContent = 'Selected';
+      }
+      current = idx; // ensure we stay on a valid integer index
+      spinBtn.textContent = 'SPIN AGAIN';
+      spinBtn.disabled = false;
+      spinning = false;
+    }
+
+    // Drag/Swipe controls
+    let dragging = false;
+    let startX = 0, startCurrent = 0;
+    let lastX = 0, lastTime = 0, velocity = 0;
+    const dragFactor = 1 / GAP; // px -> index
+
+    function onPointerDown(e){
+      if(spinning) return;
+      dragging = true;
+      carousel.classList.add('grabbing');
+      startX = e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0;
+      lastX = startX; lastTime = performance.now();
+      startCurrent = current;
+    }
+
+    function onPointerMove(e){
+      if(!dragging) return;
+      const x = e.clientX ?? (e.touches && e.touches[0].clientX) ?? lastX;
+      const dx = x - startX;
+      current = mod(startCurrent - dx * dragFactor, N);
+      const now = performance.now();
+      const dt = now - lastTime;
+      if(dt > 0){ velocity = (x - lastX) * dragFactor / (dt/1000); }
+      lastX = x; lastTime = now;
+      layout();
+    }
+
+    async function onPointerUp(){
+      if(!dragging) return;
+      dragging = false;
+      carousel.classList.remove('grabbing');
+
+      // If the user flicks fast enough, kick off a normal 3s spin
+      const V_THRESH = 0.8; // indexes/second
+      if (Math.abs(velocity) > V_THRESH && !spinning) {
+        spin();
+        return;
+      }
+
+      // Otherwise, tiny inertia then snap to nearest card
+      const inertia = Math.max(-2, Math.min(2, velocity * 0.15));
+      current = mod(current - inertia, N);
+      const idx = normIndex(current);
+      current = idx;
+      layout();
+      if (cards[idx]) {
+        statusEl.textContent = 'Selected: ' + cards[idx].querySelector('.label').textContent;
+      }
+    }
+
+    const carouselEl = document.getElementById('carousel');
+    carouselEl.addEventListener('pointerdown', (e)=>{ e.preventDefault(); onPointerDown(e); });
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+
+    // iOS Safari fallback
+    carouselEl.addEventListener('touchstart', (e)=>{ e.preventDefault(); onPointerDown(e); }, {passive:false});
+    window.addEventListener('touchmove', onPointerMove, {passive:false});
+    window.addEventListener('touchend', onPointerUp);
+
+    spinBtn.addEventListener('click', spin);
+
+    // --- Lightweight tests to prevent regressions ---
+    (function runTests(){
+      console.assert(((Math.round(23.6) % N) + N) % N !== N, 'Rounding should not produce N');
+      console.assert(normIndex(N-0.49) >= 0 && normIndex(N-0.49) < N, 'normIndex near end stays in range');
+      console.assert(normIndex(-0.6) >= 0 && normIndex(-0.6) < N, 'normIndex handles negatives');
+      console.assert(normIndex(N+0.1) >= 0 && normIndex(N+0.1) < N, 'normIndex wraps big numbers');
+      // New: ensure safe access after pointer up logic
+      const testIdx = normIndex(-1000.4);
+      console.assert(cards[testIdx], 'Safe index should point to a card');
+    })();
+  </script>
+</body>
+</html>
